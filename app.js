@@ -264,14 +264,20 @@ async function importExcel(event) {
       });
     }
 
-    // Insert batch (max 1000 per request)
-    let imported = 0;
-    const BATCH = 500;
-    for (let i = 0; i < toInsert.length; i += BATCH) {
-      const { error } = await _supabase.from(TABLE).insert(toInsert.slice(i, i + BATCH));
-      if (error) throw error;
-      imported += Math.min(BATCH, toInsert.length - i);
-    }
+    // Insert batch dengan upsert — duplikat NPM otomatis dilewati
+let imported = 0;
+const BATCH = 500;
+for (let i = 0; i < toInsert.length; i += BATCH) {
+  const { data: upserted, error } = await _supabase
+    .from(TABLE)
+    .upsert(toInsert.slice(i, i + BATCH), {
+      onConflict: 'npm',        // jika NPM sudah ada → lewati
+      ignoreDuplicates: true    // tidak error, tidak overwrite
+    })
+    .select();
+  if (error) throw error;
+  imported += (upserted || []).length;
+}
 
     statusEl.className = 'import-status success';
     statusEl.textContent = `✅ Import selesai! ${imported} data diimport, ${skipped} dilewati (duplikat/kosong).`;
