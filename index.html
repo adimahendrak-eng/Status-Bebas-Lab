@@ -209,6 +209,28 @@
               </div>
               <div id="importStatus" class="import-status" style="display:none"></div>
             </div>
+            <div class="divider"></div>
+            <!-- Sinkron dari E-Survei -->
+            <div class="import-section">
+              <p class="import-label">Sinkron dari E-Survei</p>
+              <div class="import-row">
+                <label class="btn-secondary" for="syncFile">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                  </svg>
+                  Pilih File Sinkron
+                  <input type="file" id="syncFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importSinkronSurvei(event)" />
+                </label>
+                <span class="import-hint">File dari tombol Export di web e-survei</span>
+              </div>
+              <label class="checkbox-item" style="margin-top:12px">
+                <input type="checkbox" id="syncTunggakan" class="cb" checked />
+                <span class="cb-box"></span>
+                <span class="cb-text">Ikut mencentang "Tidak ada tunggakan"</span>
+              </label>
+              <div id="syncStatus" class="import-status" style="display:none"></div>
+            </div>
           </div>
         </div>
 
