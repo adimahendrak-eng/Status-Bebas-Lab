@@ -31,6 +31,8 @@ function goAdmin() {
     showSection('admin');
     document.getElementById('navAdmin').classList.add('active');
     document.getElementById('navCek').classList.remove('active');
+    // Sesi login masih tersimpan (mis. tab dipulihkan browser) → data tetap harus dimuat
+    loadData();
   } else {
     showSection('login');
   }
@@ -88,19 +90,33 @@ async function loadData() {
 
 /** Ambil semua data dari Supabase */
 async function fetchAll() {
-  const { data, error } = await _supabase
-    .from(TABLE)
-    .select('*')
-    .order('created_at', { ascending: false });
+  try {
+    // Supabase membatasi 1000 baris per permintaan → ambil per halaman sampai habis
+    const PAGE = 1000;
+    let semua = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await _supabase
+        .from(TABLE)
+        .select('*')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      semua = semua.concat(data || []);
+      if (!data || data.length < PAGE) break;
+    }
 
-  if (error) {
+    allMahasiswa = semua;
+    renderTable(allMahasiswa);
+    updateStats(allMahasiswa);
+  } catch (error) {
     console.error('Supabase error:', error);
-    showToast('Gagal memuat data. Cek konfigurasi Supabase.');
-    return;
+    showToast('Gagal memuat data. Cek koneksi internet atau konfigurasi Supabase.');
+    const tbody = document.getElementById('tableBody');
+    if (tbody && allMahasiswa.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-row">Gagal memuat data. <a href="#" onclick="fetchAll();return false;">Coba lagi</a></td></tr>';
+    }
   }
-  allMahasiswa = data || [];
-  renderTable(allMahasiswa);
-  updateStats(allMahasiswa);
 }
 
 /** Simpan / Update data mahasiswa */
