@@ -465,3 +465,144 @@ function escHtml(str) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+// ════════════════════════════════════════════════════════════
+//  SINKRON DARI E-SURVEI
+//  File berasal dari tombol "Export" di web e-survei.
+//  Aturan:
+//   • Mahasiswa yang cocok NPM-nya & belum tercentang Survei
+//     → Survei + Evaluasi dicentang (+ Tunggakan jika opsi aktif)
+//   • Yang Survei-nya sudah tercentang dilewati, jadi centang
+//     manual (mis. Tunggakan yang dibatalkan) tidak tertimpa
+//   • NPM yang tidak ada di daftar TIDAK ditambahkan otomatis
+// ════════════════════════════════════════════════════════════
+
+let lastNotFound = [];
+
+function normNpm(v) {
+  return String(v == null ? '' : v).replace(/\s+/g, '').trim();
+}
+
+async function importSinkronSurvei(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const statusEl = document.getElementById('syncStatus');
+  statusEl.className = 'import-status';
+  statusEl.textContent = '⏳ Memproses file sinkron...';
+  statusEl.style.display = 'block';
+
+  try {
+    const buf  = await file.arrayBuffer();
+    const wb   = XLSX.read(buf, { type: 'arraybuffer' });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
+
+    if (rows.length < 2) {
+      statusEl.className = 'import-status error';
+      statusEl.textContent = '❌ File kosong atau tidak ada data.';
+      return;
+    }
+
+    const headers = rows[0].map(h => String(h).toLowerCase().trim());
+    const iNpm    = headers.findIndex(h => h.includes('npm'));
+    const iNama   = headers.findIndex(h => h.includes('nama'));
+
+    if (iNpm < 0) {
+      statusEl.className = 'import-status error';
+      statusEl.textContent = '❌ Kolom "npm" tidak ditemukan. Gunakan file dari tombol Export di web e-survei.';
+      return;
+    }
+
+    // NPM unik (satu mahasiswa bisa mengisi lebih dari sekali)
+    const namaByNpm = new Map();
+    for (const row of rows.slice(1)) {
+      const npm = normNpm(row[iNpm]);
+      if (!npm || namaByNpm.has(npm)) continue;
+      namaByNpm.set(npm, iNama >= 0 ? String(row[iNama] || '').trim() : '');
+    }
+    const npms = [...namaByNpm.keys()];
+
+    if (npms.length === 0) {
+      statusEl.className = 'import-status error';
+      statusEl.textContent = '❌ Tidak ada NPM yang terbaca di file.';
+      return;
+    }
+
+    const ikutTunggakan = document.getElementById('syncTunggakan').checked;
+    const CHUNK = 100;
+    const found = new Set();
+    let updated = 0;
+    let already = 0;
+
+    for (let i = 0; i < npms.length; i += CHUNK) {
+      const chunk = npms.slice(i, i + CHUNK);
+
+      const { data: dbRows, error } = await _supabase
+        .from(TABLE)
+        .select('id, npm, sudah_survei')
+        .in('npm', chunk);
+      if (error) throw error;
+
+      const belumIds = [];
+      (dbRows || []).forEach(r => {
+        found.add(r.npm);
+        if (r.sudah_survei) already++;
+        else belumIds.push(r.id);
+      });
+
+      if (belumIds.length) {
+        const payload = { sudah_survei: true, sudah_evaluasi: true };
+        if (ikutTunggakan) payload.bebas_tunggakan = true;
+
+        const { error: e2 } = await _supabase
+          .from(TABLE)
+          .update(payload)
+          .in('id', belumIds);
+        if (e2) throw e2;
+        updated += belumIds.length;
+      }
+    }
+
+    lastNotFound = npms
+      .filter(n => !found.has(n))
+      .map(n => ({ npm: n, nama: namaByNpm.get(n) }));
+
+    let html = `✅ Sinkron selesai!<br>
+      • <b>${updated}</b> mahasiswa dicentang otomatis<br>
+      • <b>${already}</b> sudah tercentang sebelumnya (dilewati)<br>
+      • <b>${lastNotFound.length}</b> NPM tidak ditemukan di daftar`;
+
+    if (ikutTunggakan && updated > 0) {
+      html += `<br><small>⚠️ Kolom Tunggakan ikut dicentang. Batalkan manual untuk mahasiswa yang punya tunggakan.</small>`;
+    }
+
+    if (lastNotFound.length) {
+      const shown = lastNotFound.slice(0, 50);
+      html += `<details style="margin-top:8px"><summary style="cursor:pointer">Lihat NPM tidak ditemukan</summary>
+        <div style="margin-top:6px;font-size:12px;line-height:1.7">
+          ${shown.map(x => `${escHtml(x.npm)} – ${escHtml(x.nama || '-')}`).join('<br>')}
+          ${lastNotFound.length > shown.length ? `<br>… dan ${lastNotFound.length - shown.length} lainnya` : ''}
+        </div>
+        <button type="button" class="btn-secondary" style="margin-top:8px" onclick="downloadNotFound()">Unduh daftar (Excel)</button>
+      </details>`;
+    }
+
+    statusEl.className = 'import-status success';
+    statusEl.innerHTML = html;
+    event.target.value = '';
+    await fetchAll();
+  } catch (err) {
+    console.error(err);
+    statusEl.className = 'import-status error';
+    statusEl.textContent = '❌ Gagal sinkron: ' + (err.message || 'Pastikan format file benar.');
+  }
+}
+
+function downloadNotFound() {
+  if (!lastNotFound.length) return;
+  const rows = [['npm', 'nama'], ...lastNotFound.map(x => [x.npm, x.nama])];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Tidak Ditemukan');
+  XLSX.writeFile(wb, `NPM_Tidak_Ditemukan_${Date.now()}.xlsx`);
+}
