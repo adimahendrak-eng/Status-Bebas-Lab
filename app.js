@@ -6,7 +6,7 @@
  */
 
 // ── Konfigurasi ──────────────────────────────────────────
-const ADMIN_PASSWORD = "labjr2025";  // ← Ganti password admin di sini
+const ADMIN_PASSWORD = "admin123";  // ← Ganti password admin di sini
 
 // ── State ────────────────────────────────────────────────
 let allMahasiswa  = [];
